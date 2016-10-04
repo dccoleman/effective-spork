@@ -12,8 +12,8 @@ def map_server(client):
 		bucket.client = client
 
 		#put rules in place for server mapping
-		subprocess.call(["iptables", "-t", "nat", "-A", "PREROUTING", "-s", client, "-d", prefix + str(bucket.ip), "-j", "DNAT", "--to-destination", server])
-		subprocess.call(["iptables", "-t", "nat", "-A", "POSTROUTING", "-s", server, "-d", client, "-j", "SNAT", "--to-source", prefix + str(bucket.ip)])
+		subprocess.call(["iptables", "-t", "nat", "-I", "PREROUTING", "-s", client, "-d", prefix + str(bucket.ip), "-j", "DNAT", "--to-destination", server])
+		subprocess.call(["iptables", "-t", "nat", "-I", "POSTROUTING", "-s", server, "-d", client, "-j", "SNAT", "--to-source", prefix + str(bucket.ip)])
 
 		bucket.setTimeout()
 		mapped.put(bucket)

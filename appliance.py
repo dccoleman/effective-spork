@@ -23,7 +23,7 @@ def timeout_mappings():
 			currtime = datetime.datetime.now()
 			if(currtime >= mapped.queue[0].timeout):
 				obj2 = mapped.get()
-				map_honeypot(obj2)
+				unmap_server(obj2)
 				#unmap from server
 				print "unmapped " + prefix + str(obj2.ip)
 				continue
@@ -68,7 +68,7 @@ for i in xrange(0,slots):
 	subprocess.call(["ifconfig", iface + ":" + str(i), prefix + str(i + 50)])
 	map_honeypot(mapping)
 
-subprocess.call(["iptables", "-t", "nat", "-I", "POSTROUTING", "-o", iface, "-j", "MASQUERADE"])
+subprocess.call(["iptables", "-t", "nat", "-I", "POSTROUTING", "-o", iface, "-d", server, "-j", "MASQUERADE"])
 subprocess.call(["ifconfig", iface + ":255", prefix + "255"])
 subprocess.call(["iptables", "-I", "INPUT", "-d", prefix+"255", "-j", "NFQUEUE", "--queue-num", "1"])
 

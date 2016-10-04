@@ -4,7 +4,7 @@ import datetime
 import time
 
 log = 5
-slots = 100
+slots = 2
 ttl = 120 #time to live in seconds
 honeypot = "10.4.12.4" #the honeypot's address
 server = "10.4.12.3" 
