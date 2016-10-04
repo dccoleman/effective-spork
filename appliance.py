@@ -2,6 +2,7 @@ from netfilterqueue import NetfilterQueue
 from dnslib import DNSRecord
 
 import socket
+import threading
 
 from scapy.all import *
 
@@ -10,6 +11,29 @@ from map_honeypot import *
 from map_server import map_server
 
 from slot import slot
+
+def timeout_mappings():
+	print "starting thread"
+	while True:
+		if(mapped.empty()):
+			#print "nothing"
+			time.sleep(.2)
+			continue
+		else:
+			currtime = datetime.datetime.now()
+			if(currtime >= mapped.queue[0].timeout):
+				obj2 = mapped.get()
+				map_honeypot(obj2)
+				#unmap from server
+				print "unmapped " + prefix + str(obj2.ip)
+				continue
+
+			diff = (mapped.queue[0].timeout - currtime).seconds
+			if(diff >= .1):
+				print "waiting " + str(diff)
+				time.sleep((mapped.queue[0].timeout - currtime).seconds)
+				continue
+	print "ending thread"
 
 def acceptAll(pkt) :
 	d = IP(pkt.get_payload())
@@ -33,6 +57,10 @@ def acceptAll(pkt) :
 
 		#print ' '.join(c.encode('hex') for c in pkt.get_payload()[0:20])
 		pkt.accept()
+
+t = threading.Thread(target = timeout_mappings)
+t.daemon = True
+t.start()
 
 subprocess.call(["iptables", "-t", "nat", "-F"])
 for i in xrange(0,slots):
