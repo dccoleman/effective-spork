@@ -6,10 +6,13 @@ import logging
 
 logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
 from scapy.all import *
+
 import threading
 import datetime
 from dnslib import DNSRecord
 import dns.zone
+
+from subprocess import Popen, PIPE
 
 NUM_SLOTS = 2
 TTL_SECS = 20
@@ -36,6 +39,34 @@ class Slot(object):
     def set_timeout(self):
         temptimeout = datetime.datetime.now()
         self.timeout = (temptimeout + datetime.timedelta(0, TTL_SECS))
+
+
+def wait_honeypot_affirmative():
+
+    #wait for the honeypot to send a message containing the port number here
+
+    time.sleep(15)
+
+    ip = nat_lookup("51258")
+
+    if ip:
+        map_server(ip)
+    
+
+def nat_lookup(port):
+    ip = None
+
+    proc = Popen(["conntrack", "-L", "-p", "tcp", "--reply-port-dst", port], stdout = PIPE, stderr = PIPE)
+    out, err = proc.communicate()
+
+    splits = out.split()
+    if not splits:
+        print "Error: No connection found using port " + port
+    else:
+        ip = splits[4].split("=")[1]
+        print port + " resolves to " + ip
+
+    return ip
 
 
 def map_server(client):
@@ -161,6 +192,10 @@ def main():
     timeout_thread = threading.Thread(target = timeout_thread_runner)
     timeout_thread.daemon = True
     timeout_thread.start()
+
+    honeypot_thread = threading.Thread(target = wait_honeypot_affirmative)
+    honeypot_thread.daemon = True
+    honeypot_thread.start()
 
     nfqueue = NetfilterQueue()
     nfqueue.bind(1, on_packet_received)
