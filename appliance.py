@@ -4,6 +4,7 @@ from netfilterqueue import NetfilterQueue
 import socket
 from scapy.all import *
 import threading
+import datetime
 
 NUM_SLOTS = 2
 TTL_SECS = 20
@@ -137,7 +138,7 @@ def main():
 
     setup(NUM_SLOTS)
 
-    timeout_thread = threading.Thread(target = timeout_mappings)
+    timeout_thread = threading.Thread(target = timeout_thread_runner)
     timeout_thread.daemon = True
     timeout_thread.start()
 
