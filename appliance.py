@@ -1,5 +1,6 @@
 from netfilterqueue import NetfilterQueue
 from dnslib import DNSRecord
+import dns.zone
 
 import socket
 import threading
@@ -41,22 +42,56 @@ def acceptAll(pkt) :
 	print "'" + d['DNS Question Record'].qname + "'"
 	print d[IP].src
 
-	if(d['DNS Question Record'].qname != "cap.com."):
+	if(d['DNS Question Record'].qname != "www.cap.com."):
 		pkt.accept()
 	else:	
-		print "Found cap.com!"
+		print "Found www.cap.com!"
 		print d.summary()
 		print d[IP].src
 
-		#modify dns zone file
+		res = map_server(d[IP].src)
 
-		if(map_server(d[IP].src) == None):
-			pkt.reject()
+		if(res == None):
+			print "No slots full! Can't make mapping"
+			pkt.drop()
 			#drop connection, all slots used up
+		else:
+			modify_dns(res)
 
 
 		#print ' '.join(c.encode('hex') for c in pkt.get_payload()[0:20])
 		pkt.accept()
+
+def modify_dns(bucket):
+	domain = "cap.com"
+	print "Getting zone object for domain " + domain
+	zoneFile = "/etc/bind/zones/db.cap.com"
+
+	zone = dns.zone.from_file(zoneFile, domain)
+	for (name, ttl, rdata) in zone.iterate_rdatas('SOA'):
+		serial = rdata.serial + 1
+		rdata.serial = serial
+		print "Changing serial to ", serial
+
+		change = "www"
+		new_IP = prefix + str(bucket.ip)
+		rdataset = zone.find_rdataset(change, rdtype='A')
+
+		for rdata in rdataset:
+			rdata.address = new_IP
+
+		print "Changed IP to ", rdata.address
+
+		print "Writing zone file"
+		zone.to_file(zoneFile)
+
+		print "reloading zone file"
+		subprocess.call(["rndc", "reload", "cap.com"])
+		print "reloading file finished"
+
+
+
+#script
 
 t = threading.Thread(target = timeout_mappings)
 t.daemon = True
