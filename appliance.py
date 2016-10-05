@@ -1,26 +1,23 @@
+#!/usr/bin/python
+# CS 4404 final project
+# Devon Coleman, Kyle McCormick, Christopher Navarro, William Van Rensselaer
 
+import datetime
+import dns.zone
 from dnslib import DNSRecord
+import logging
 from netfilterqueue import NetfilterQueue
 import socket
-import logging
-
-logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
 from scapy.all import *
-
-import threading
-import datetime
-from dnslib import DNSRecord
-import dns.zone
-
 from subprocess import Popen, PIPE
+import threading
 
+from shared_constants import *
+
+
+NET_INTERFACE = "eth0"
 NUM_SLOTS = 2
 TTL_SECS = 20
-ADDR_PREFIX = "10.4.12."
-HONEYPOT_ADDR = ADDR_PREFIX + "4" #the honeypot's address
-WEB_SERVER_ADDR = ADDR_PREFIX + "3" 
-CLIENT_ADDR = ADDR_PREFIX + "1"
-NET_INTERFACE = "eth0"
 
 mapped = Queue.Queue()
 unmapped = Queue.Queue()
@@ -41,23 +38,43 @@ class Slot(object):
         self.timeout = (temptimeout + datetime.timedelta(0, TTL_SECS))
 
 
-def wait_honeypot_affirmative():
-    port = "51259" #recieve message from honeypot
+def honeypot_thread_runner():
+    server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_sock.bind(('0.0.0.0', APP_HONEYPOT_PORT))
+    server_sock.listen(5)
+    server_sock.setblocking(0)
 
-    time.sleep(15)
+    while not quitting:
+        try:
+            client_sock, (client_addr, _) = server_sock.accept()
+        except:
+            time.sleep(0.1)
+            continue
+        if client_addr != HONEYPOT_ADDR:
+            continue
 
-    print "Honeypot requesting capability for user on port " + port
+        fails = 0
+        while fail < 3:
+            try:
+                bytes = client_sock.recv(2)
+            except:
+                time.sleep(0.1)
+                fails += 1
+                bytes = None
+        if bytes is None or len(bytes) != 2:
+            continue
+
+        port = (ord(bytes[0]) >> 8) | ord(bytes[1])
+        print "Honeypot requesting capability for user on port " + `port`
+        ip = nat_lookup(port)
+        if ip:
+	        map_server(ip)   
     
-    ip = nat_lookup(port)
-
-    if ip:
-        map_server(ip)
     
-
 def nat_lookup(port):
     ip = None
 
-    proc = Popen(["conntrack", "-L", "-p", "tcp", "--reply-port-dst", port], stdout = PIPE, stderr = PIPE)
+    proc = Popen(["conntrack", "-L", "-p", "tcp", "--reply-port-dst", `port`], stdout = PIPE, stderr = PIPE)
     out, err = proc.communicate()
 
     splits = out.split()
@@ -203,12 +220,13 @@ def main():
     global quitting
 
     setup(NUM_SLOTS)
+    logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
 
-    timeout_thread = threading.Thread(target = timeout_thread_runner)
+    timeout_thread = threading.Thread(target=timeout_thread_runner)
     timeout_thread.daemon = True
     timeout_thread.start()
 
-    honeypot_thread = threading.Thread(target = wait_honeypot_affirmative)
+    honeypot_thread = threading.Thread(target=honeypot_thread_runner)
     honeypot_thread.daemon = True
     honeypot_thread.start()
 

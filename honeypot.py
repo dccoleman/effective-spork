@@ -1,3 +1,6 @@
+#!/usr/bin/python
+# CS 4404 final project
+# Devon Coleman, Kyle McCormick, Christopher Navarro, William Van Rensselaer
 
 from BaseHTTPServer import BaseHTTPRequestHandler
 import datetime
@@ -6,9 +9,8 @@ import socket
 from StringIO import StringIO
 import time
 
+from shared_constants import *
 
-APP_ADDR = "10.4.12.2"
-APP_PORT = 44044
 
 quitting = False
 
@@ -60,7 +62,7 @@ def get_http_redirect(redirect_url):
 
 def send_port_to_appliance(port):
     app_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    app_sock.connect((APP_ADDR, APP_PORT))
+    app_sock.connect((APP_ADDR, APP_HONEYPOT_PORT))
     hi_byte = (port << 8) & 0xff
     lo_byte = port & 0xff
     app_sock.send(chr(hi_byte) + chr(lo_byte))
