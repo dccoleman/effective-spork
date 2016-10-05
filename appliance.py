@@ -42,12 +42,13 @@ class Slot(object):
 
 
 def wait_honeypot_affirmative():
-
-    #wait for the honeypot to send a message containing the port number here
+    port = "51259" #recieve message from honeypot
 
     time.sleep(15)
 
-    ip = nat_lookup("51258")
+    print "Honeypot requesting capability for user on port " + port
+    
+    ip = nat_lookup(port)
 
     if ip:
         map_server(ip)
@@ -64,13 +65,15 @@ def nat_lookup(port):
         print "Error: No connection found using port " + port
     else:
         ip = splits[4].split("=")[1]
-        print port + " resolves to " + ip
+        print "Port " + port + " resolves to " + ip
 
     return ip
 
 
 def map_server(client):
     if(unmapped.empty()):
+        return None
+    elif client in mapped_clients:
         return None
     else:
         bucket = unmapped.get()     
@@ -154,20 +157,32 @@ def modify_dns(new_IP):
     zoneFile = "/etc/bind/zones/db.cap.com"
 
     zone = dns.zone.from_file(zoneFile, domain)
-    for (name, ttl, rdata) in zone.iterate_rdatas('SOA'):
-        serial = rdata.serial + 1
-        rdata.serial = serial
 
-        change = "www"
-        rdataset = zone.find_rdataset(change, rdtype='A')
+    change = "www"
+    rdataset = zone.find_rdataset(change, rdtype='A')
 
-        for rdata in rdataset:
+    req_reload = False
+
+    for rdata in rdataset:
+        if rdata.address != new_IP:
+            req_reload = True
             rdata.address = new_IP
+
+    if req_reload:
+        for (name, ttl, rdata) in zone.iterate_rdatas('SOA'):
+            serial = rdata.serial + 1
+            rdata.serial = serial
 
         zone.to_file(zoneFile)
 
-        subprocess.call(["rndc", "reload", "cap.com"])
-        print "DNS zone modification complete"
+        proc = Popen(["rndc", "reload", "cap.com"], stdout = PIPE, stderr = PIPE)
+        out,err = proc.communicate()
+        if err:
+            print err
+        else:
+            print "DNS zone modification complete"
+    else:
+        print "No DNS modification necessary"
         
 
 def setup(num_slots):
