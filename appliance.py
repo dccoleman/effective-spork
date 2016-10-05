@@ -47,22 +47,25 @@ def acceptAll(pkt) :
 	else:	
 		print "Found www.cap.com!"
 		print d.summary()
-		print d[IP].src
+		client_IP = d[IP].src
 
-		res = map_server(d[IP].src)
+		if client_IP in mapped_clients:
+			modify_dns(mapped_clients[client_IP])
 
-		if(res == None):
-			print "No slots full! Can't make mapping"
-			pkt.drop()
-			#drop connection, all slots used up
 		else:
-			modify_dns(res)
+			#now we need to procure a new slot
+			res = map_server(client_IP)
 
+			if(res == None):
+				print "No slots full! Can't make mapping"
+				pkt.drop()
+				#drop connection, all slots used up
+			else:
+				modify_dns(prefix + str(res.ip))
 
-		#print ' '.join(c.encode('hex') for c in pkt.get_payload()[0:20])
 		pkt.accept()
 
-def modify_dns(bucket):
+def modify_dns(new_IP):
 	domain = "cap.com"
 	print "Getting zone object for domain " + domain
 	zoneFile = "/etc/bind/zones/db.cap.com"
@@ -74,7 +77,6 @@ def modify_dns(bucket):
 		print "Changing serial to ", serial
 
 		change = "www"
-		new_IP = prefix + str(bucket.ip)
 		rdataset = zone.find_rdataset(change, rdtype='A')
 
 		for rdata in rdataset:
@@ -103,7 +105,8 @@ for i in xrange(0,slots):
 	subprocess.call(["ifconfig", iface + ":" + str(i), prefix + str(i + 50)])
 	map_honeypot(mapping)
 
-subprocess.call(["iptables", "-t", "nat", "-I", "POSTROUTING", "-o", iface, "-d", server, "-j", "MASQUERADE"])
+# "-d", server,
+subprocess.call(["iptables", "-t", "nat", "-A", "POSTROUTING", "-o", iface, "-j", "MASQUERADE"])
 subprocess.call(["ifconfig", iface + ":255", prefix + "255"])
 subprocess.call(["iptables", "-I", "INPUT", "-d", prefix+"255", "-j", "NFQUEUE", "--queue-num", "1"])
 

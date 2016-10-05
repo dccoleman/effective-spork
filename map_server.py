@@ -4,16 +4,14 @@ def map_server(client):
 	if(unmapped.empty()):
 		return None
 	else:
-		bucket = unmapped.get()
-		#remove rules created for the honeypot mapping
-		#subprocess.call(["iptables", "-t", "nat", "-D", "PREROUTING", "-d", prefix + str(bucket.ip), "-j", "DNAT", "--to-destination", honeypot])
-		#subprocess.call(["iptables", "-t", "nat", "-D", "POSTROUTING", "-s", honeypot, "-j", "SNAT", "--to-source", prefix + str(bucket.ip)])
-		
+		bucket = unmapped.get()		
 		bucket.client = client
+
+		mapped_clients[client] = prefix + str(bucket.ip)
 
 		#put rules in place for server mapping
 		subprocess.call(["iptables", "-t", "nat", "-I", "PREROUTING", "-s", client, "-d", prefix + str(bucket.ip), "-j", "DNAT", "--to-destination", server])
-		subprocess.call(["iptables", "-t", "nat", "-I", "POSTROUTING", "-s", server, "-d", client, "-j", "SNAT", "--to-source", prefix + str(bucket.ip)])
+		subprocess.call(["iptables", "-t", "nat", "-A", "POSTROUTING", "-s", server, "-d", client, "-j", "SNAT", "--to-source", prefix + str(bucket.ip)])
 
 		bucket.setTimeout()
 		mapped.put(bucket)
