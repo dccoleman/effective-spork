@@ -2,6 +2,9 @@
 from dnslib import DNSRecord
 from netfilterqueue import NetfilterQueue
 import socket
+import logging
+
+logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
 from scapy.all import *
 import threading
 import datetime
@@ -50,8 +53,8 @@ def map_server(client):
 
         bucket.set_timeout()
         mapped.put(bucket)
+        print "Capability acquired by " + bucket.client
         return bucket
-
 
 def map_honeypot(bucket):
         #map to the honeypot
@@ -69,9 +72,10 @@ def unmap_server(bucket):
 
         unmapped.put(bucket)
 
+        print "Capability timeout for " + bucket.client
+
 
 def timeout_thread_runner():
-    print "starting timeout thread"
     while not quitting:
         if(mapped.empty()):
             #print "nothing"
@@ -82,39 +86,29 @@ def timeout_thread_runner():
             if(currtime >= mapped.queue[0].timeout):
                 obj2 = mapped.get()
                 unmap_server(obj2)
-                #unmap from server
-                print "unmapped " + ADDR_PREFIX + str(obj2.ip)
                 continue
 
             diff = (mapped.queue[0].timeout - currtime).seconds
             if(diff >= .1):
-                print "waiting " + str(diff)
+                print "Next capability expires in " + str(diff) + " seconds"
                 time.sleep((mapped.queue[0].timeout - currtime).seconds)
                 continue
-    print "ending timeout thread"
 
 
 def on_packet_received(pkt):
-    print "packet recieved that matches iptables rule!"
     d = IP(pkt.get_payload())
 
-    print "'" + d['DNS Question Record'].qname + "'"
-    print d[IP].src
-
     if(d['DNS Question Record'].qname == "www.cap.com."):
-        print "Found www.cap.com!"
-        print d.summary()
         client_IP = d[IP].src
 
         if client_IP in mapped_clients:
             modify_dns(mapped_clients[client_IP])
 
         else:
-            #now we need to procure a new slot
             res = map_server(client_IP)
 
             if(res == None):
-                print "No slots full! Can't make mapping"
+                print "All slots full! Can't make mapping"
                 pkt.drop()
                 #drop connection, all slots used up
             else:
@@ -126,14 +120,12 @@ def on_packet_received(pkt):
 
 def modify_dns(new_IP):
     domain = "cap.com"
-    print "Getting zone object for domain " + domain
     zoneFile = "/etc/bind/zones/db.cap.com"
 
     zone = dns.zone.from_file(zoneFile, domain)
     for (name, ttl, rdata) in zone.iterate_rdatas('SOA'):
         serial = rdata.serial + 1
         rdata.serial = serial
-        print "Changing serial to ", serial
 
         change = "www"
         rdataset = zone.find_rdataset(change, rdtype='A')
@@ -141,14 +133,10 @@ def modify_dns(new_IP):
         for rdata in rdataset:
             rdata.address = new_IP
 
-        print "Changed IP to ", rdata.address
-
-        print "Writing zone file"
         zone.to_file(zoneFile)
 
-        print "reloading zone file"
         subprocess.call(["rndc", "reload", "cap.com"])
-        print "reloading file finished"
+        print "DNS zone modification complete"
         
 
 def setup(num_slots):
@@ -157,9 +145,9 @@ def setup(num_slots):
     for i in range(0, num_slots):
         mapping = Slot(i, i + 50, CLIENT_ADDR)
         subprocess.call(["ifconfig", NET_INTERFACE + ":" + str(i), ADDR_PREFIX + str(i + 50)])
+        print "Interface " + NET_INTERFACE + ":" + str(i) + " created with IP " + ADDR_PREFIX + str(i + 50)
         map_honeypot(mapping)
 
-    #"-d", WEB_SERVER_ADDR,
     subprocess.call(["iptables", "-t", "nat", "-I", "POSTROUTING", "-o", NET_INTERFACE, "-j", "MASQUERADE"])
     subprocess.call(["ifconfig", NET_INTERFACE + ":255", ADDR_PREFIX + "255"])
     subprocess.call(["iptables", "-I", "INPUT", "-d", ADDR_PREFIX  + "255", "-j", "NFQUEUE", "--queue-num", "1"])
