@@ -61,11 +61,13 @@ def get_http_redirect(redirect_url):
 
 
 def send_port_to_appliance(port):
+    print "Sending ", port
     app_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     app_sock.connect((APP_ADDR, APP_HONEYPOT_PORT))
-    hi_byte = (port << 8) & 0xff
-    lo_byte = port & 0xff
-    app_sock.send(chr(hi_byte) + chr(lo_byte))
+    app_sock.send(str(port))
+    #hi_byte = (port << 8) & 0xff
+    #lo_byte = port & 0xff
+    #app_sock.send(chr(hi_byte) + chr(lo_byte))
     app_sock.close()
 
 
@@ -80,7 +82,7 @@ def main():
     server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_sock.bind(('0.0.0.0', 80))
     server_sock.listen(5)
-    server_sock.setblocking(0)
+    server_sock.setblocking(1)
 
     while not quitting:
         try:
@@ -94,18 +96,8 @@ def main():
         print 'connected to ' + `client_addr` + ':' + `client_port`
 
         data = ''
-        fails = 0
-        while fails < 3:
-            try:
-                read = client_sock.recv(1024)
-            except:
-                fails += 1
-                time.sleep(0.1)
-                continue
-            if len(read) == 0:
-                fails += 1
-                continue
-            data += read
+        read = client_sock.recv(1024)
+        data += read
 
         print data
 

@@ -42,7 +42,7 @@ def honeypot_thread_runner():
     server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_sock.bind(('0.0.0.0', APP_HONEYPOT_PORT))
     server_sock.listen(5)
-    server_sock.setblocking(0)
+    server_sock.setblocking(1)
 
     while not quitting:
         try:
@@ -53,18 +53,8 @@ def honeypot_thread_runner():
         if client_addr != HONEYPOT_ADDR:
             continue
 
-        fails = 0
-        while fail < 3:
-            try:
-                bytes = client_sock.recv(2)
-            except:
-                time.sleep(0.1)
-                fails += 1
-                bytes = None
-        if bytes is None or len(bytes) != 2:
-            continue
-
-        port = (ord(bytes[0]) >> 8) | ord(bytes[1])
+        bytes = client_sock.recv(512)
+        port = bytes
         print "Honeypot requesting capability for user on port " + `port`
         ip = nat_lookup(port)
         if ip:
@@ -74,15 +64,17 @@ def honeypot_thread_runner():
 def nat_lookup(port):
     ip = None
 
-    proc = Popen(["conntrack", "-L", "-p", "tcp", "--reply-port-dst", `port`], stdout = PIPE, stderr = PIPE)
+    proc = Popen(["conntrack", "-L", "-p", "tcp", "--sport", str(port)], stdout = PIPE, stderr = PIPE)
     out, err = proc.communicate()
-
+    print out
+    print err
     splits = out.split()
+    print splits
     if not splits:
-        print "Error: No connection found using port " + port
+        print "Error: No connection found using port " + str(port)
     else:
         ip = splits[4].split("=")[1]
-        print "Port " + port + " resolves to " + ip
+        print "Port " + str(port) + " resolves to " + str(ip)
 
     return ip
 
