@@ -32,6 +32,7 @@ class Slot(object):
         self.interface = interface      
         self.ip = ip
         self.client = client
+        self.type = 0
         
     def set_timeout(self):
         temptimeout = datetime.datetime.now()
@@ -58,7 +59,7 @@ def honeypot_thread_runner():
         print "Honeypot requesting capability for user on port " + `port`
         ip = nat_lookup(port)
         if ip:
-	        map_server(ip)   
+	        map_honeypot_client(ip)   
     
     
 def nat_lookup(port):
@@ -78,6 +79,28 @@ def nat_lookup(port):
 
     return ip
 
+def map_honeypot_client(client):
+    if(unmapped.empty()):
+        return None
+    elif client in mapped_clients:
+        return None
+    else:
+        bucket = unmapped.get()     
+        bucket.client = client
+        bucket.type = 1
+
+        mapped_clients[client] = ADDR_PREFIX + str(bucket.ip)
+
+        #put rules in place for server mapping
+        #"-d", ADDR_PREFIX + str(bucket.ip),
+        #"-d", client,
+        subprocess.call(["iptables", "-t", "nat", "-I", "PREROUTING", "-p", "tcp", "-s", client, "-m", "iprange", "--dst-range", "10.4.12.50-10.4.12.149", "-j", "DNAT", "--to-destination", WEB_SERVER_ADDR])
+        subprocess.call(["iptables", "-t", "nat", "-A", "POSTROUTING", "-p", "tcp", "-s", WEB_SERVER_ADDR, "-m", "iprange", "--dst-range", "10.4.12.50-10.4.12.149", "-j", "SNAT", "--to-source", ADDR_PREFIX + str(bucket.ip)])
+
+        bucket.set_timeout()
+        mapped.put(bucket)
+        print "Global capability acquired by " + bucket.client
+        return bucket
 
 def map_server(client):
     if(unmapped.empty()):
@@ -91,8 +114,8 @@ def map_server(client):
         mapped_clients[client] = ADDR_PREFIX + str(bucket.ip)
 
         #put rules in place for server mapping
-        subprocess.call(["iptables", "-t", "nat", "-I", "PREROUTING", "-s", client, "-d", ADDR_PREFIX + str(bucket.ip), "-j", "DNAT", "--to-destination", WEB_SERVER_ADDR])
-        subprocess.call(["iptables", "-t", "nat", "-A", "POSTROUTING", "-s", WEB_SERVER_ADDR, "-d", client, "-j", "SNAT", "--to-source", ADDR_PREFIX + str(bucket.ip)])
+        subprocess.call(["iptables", "-t", "nat", "-I", "PREROUTING", "-p", "tcp", "-s", client, "-d", ADDR_PREFIX + str(bucket.ip), "-j", "DNAT", "--to-destination", WEB_SERVER_ADDR])
+        subprocess.call(["iptables", "-t", "nat", "-A", "POSTROUTING", "-p", "tcp", "-s", WEB_SERVER_ADDR, "-d", client, "-j", "SNAT", "--to-source", ADDR_PREFIX + str(bucket.ip)])
 
         bucket.set_timeout()
         mapped.put(bucket)
@@ -102,15 +125,21 @@ def map_server(client):
 def map_honeypot(bucket):
         #map to the honeypot
         #after prerouting: , "-d", ADDR_PREFIX + str(bucket.ip)  
-        subprocess.call(["iptables", "-t", "nat", "-A", "PREROUTING", "-d", ADDR_PREFIX + str(bucket.ip), "-j", "DNAT", "--to-destination", HONEYPOT_ADDR])
-        subprocess.call(["iptables", "-t", "nat", "-I", "POSTROUTING", "-s", HONEYPOT_ADDR, "-j", "SNAT", "--to-source", ADDR_PREFIX + str(bucket.ip)])
+        subprocess.call(["iptables", "-t", "nat", "-A", "PREROUTING", "-p", "tcp", "-d", ADDR_PREFIX + str(bucket.ip), "-j", "DNAT", "--to-destination", HONEYPOT_ADDR])
+        subprocess.call(["iptables", "-t", "nat", "-I", "POSTROUTING", "-p", "tcp", "-s", HONEYPOT_ADDR, "-j", "SNAT", "--to-source", ADDR_PREFIX + str(bucket.ip)])
         unmapped.put(bucket)
 
 
 def unmap_server(bucket):
-        subprocess.call(["iptables", "-t", "nat", "-D", "PREROUTING", "-s", bucket.client, "-d", ADDR_PREFIX + str(bucket.ip), "-j", "DNAT", "--to-destination", WEB_SERVER_ADDR])
-        subprocess.call(["iptables", "-t", "nat", "-D", "POSTROUTING", "-s", WEB_SERVER_ADDR, "-d", bucket.client, "-j", "SNAT", "--to-source", ADDR_PREFIX + str(bucket.ip)])
-        
+
+        if bucket.type == 0:
+            subprocess.call(["iptables", "-t", "nat", "-D", "PREROUTING", "-p", "tcp", "-s", bucket.client, "-d", ADDR_PREFIX + str(bucket.ip), "-j", "DNAT", "--to-destination", WEB_SERVER_ADDR])
+            subprocess.call(["iptables", "-t", "nat", "-D", "POSTROUTING", "-p", "tcp", "-s", WEB_SERVER_ADDR, "-d", bucket.client, "-j", "SNAT", "--to-source", ADDR_PREFIX + str(bucket.ip)])
+        else:
+            subprocess.call(["iptables", "-t", "nat", "-D", "PREROUTING", "-p", "tcp", "-s", bucket.client, "-m", "iprange", "--dst-range", "10.4.12.50-10.4.12.149", "-j", "DNAT", "--to-destination", WEB_SERVER_ADDR])
+            subprocess.call(["iptables", "-t", "nat", "-D", "POSTROUTING", "-p", "tcp", "-s", WEB_SERVER_ADDR, "-m", "iprange", "--dst-range", "10.4.12.50-10.4.12.149", "-j", "SNAT", "--to-source", ADDR_PREFIX + str(bucket.ip)])
+            bucket.type = 0
+
         del mapped_clients[bucket.client]
 
         unmapped.put(bucket)
@@ -143,6 +172,7 @@ def on_packet_received(pkt):
 
     if(d['DNS Question Record'].qname == "www.cap.com."):
         client_IP = d[IP].src
+        print "DNS request sent for " + client_IP
 
         if client_IP in mapped_clients:
             modify_dns(mapped_clients[client_IP])
@@ -157,8 +187,10 @@ def on_packet_received(pkt):
             else:
                 modify_dns(ADDR_PREFIX + str(res.ip))
 
+        print "Accepted"
         pkt.accept()
     else:
+        print "Accepted"
         pkt.accept()
 
 def modify_dns(new_IP):
