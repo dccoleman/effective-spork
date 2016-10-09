@@ -9,7 +9,7 @@ from shared_constants import *
 def main():
     for i in range(0, NUM_CLIENTS):
         addr = ADDR_PREFIX + `START_CLIENT_IP + i`
-        subprocess.call(["ifconfig", "ens33:"+`i`, addr, "netmask", "255.255.255.192"])
+        subprocess.call(["ifconfig", "eth0:"+`i`, addr])
 
 main()
 

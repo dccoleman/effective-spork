@@ -16,7 +16,7 @@ from shared_constants import *
 
 
 NET_INTERFACE = "eth0"
-NUM_SLOTS = 2
+NUM_SLOTS = 100
 TTL_SECS = 20
 
 mapped = Queue.Queue()
@@ -56,7 +56,7 @@ def honeypot_thread_runner():
 
         bytes = client_sock.recv(512)
         port = bytes
-        print "Honeypot requesting capability for user on port " + `port`
+        #print "Honeypot requesting capability for user on port " + `port`
         ip = nat_lookup(port)
         if ip:
 	        map_honeypot_client(ip)   
@@ -67,15 +67,15 @@ def nat_lookup(port):
 
     proc = Popen(["conntrack", "-L", "-p", "tcp", "--sport", str(port)], stdout = PIPE, stderr = PIPE)
     out, err = proc.communicate()
-    print out
-    print err
+    #print out
+    #print err
     splits = out.split()
-    print splits
+    #print splits
     if not splits:
         print "Error: No connection found using port " + str(port)
     else:
         ip = splits[4].split("=")[1]
-        print "Port " + str(port) + " resolves to " + str(ip)
+        #Print "Port " + str(port) + " resolves to " + str(ip)
 
     return ip
 
@@ -94,12 +94,12 @@ def map_honeypot_client(client):
         #put rules in place for server mapping
         #"-d", ADDR_PREFIX + str(bucket.ip),
         #"-d", client,
-        subprocess.call(["iptables", "-t", "nat", "-I", "PREROUTING", "-p", "tcp", "-s", client, "-m", "iprange", "--dst-range", "10.4.12.50-10.4.12.149", "-j", "DNAT", "--to-destination", WEB_SERVER_ADDR])
-        subprocess.call(["iptables", "-t", "nat", "-A", "POSTROUTING", "-p", "tcp", "-s", WEB_SERVER_ADDR, "-m", "iprange", "--dst-range", "10.4.12.50-10.4.12.149", "-j", "SNAT", "--to-source", ADDR_PREFIX + str(bucket.ip)])
+        iptables_cmd(["-t", "nat", "-I", "PREROUTING", "-p", "tcp", "-s", client, "-m", "iprange", "--dst-range", "10.4.12.50-10.4.12.149", "-j", "DNAT", "--to-destination", WEB_SERVER_ADDR])
+        iptables_cmd(["-t", "nat", "-A", "POSTROUTING", "-p", "tcp", "-s", WEB_SERVER_ADDR, "-m", "iprange", "--dst-range", "10.4.12.50-10.4.12.149", "-j", "SNAT", "--to-source", ADDR_PREFIX + str(bucket.ip)])
 
         bucket.set_timeout()
         mapped.put(bucket)
-        print "Global capability acquired by " + bucket.client
+        #print "Global capability acquired by " + bucket.client
         return bucket
 
 def map_server(client):
@@ -114,37 +114,37 @@ def map_server(client):
         mapped_clients[client] = ADDR_PREFIX + str(bucket.ip)
 
         #put rules in place for server mapping
-        subprocess.call(["iptables", "-t", "nat", "-I", "PREROUTING", "-p", "tcp", "-s", client, "-d", ADDR_PREFIX + str(bucket.ip), "-j", "DNAT", "--to-destination", WEB_SERVER_ADDR])
-        subprocess.call(["iptables", "-t", "nat", "-A", "POSTROUTING", "-p", "tcp", "-s", WEB_SERVER_ADDR, "-d", client, "-j", "SNAT", "--to-source", ADDR_PREFIX + str(bucket.ip)])
+        iptables_cmd(["-t", "nat", "-I", "PREROUTING", "-p", "tcp", "-s", client, "-d", ADDR_PREFIX + str(bucket.ip), "-j", "DNAT", "--to-destination", WEB_SERVER_ADDR])
+        iptables_cmd(["-t", "nat", "-A", "POSTROUTING", "-p", "tcp", "-s", WEB_SERVER_ADDR, "-d", client, "-j", "SNAT", "--to-source", ADDR_PREFIX + str(bucket.ip)])
 
         bucket.set_timeout()
         mapped.put(bucket)
-        print "Capability acquired by " + bucket.client
+        #print "Capability acquired by " + bucket.client
         return bucket
 
 def map_honeypot(bucket):
         #map to the honeypot
         #after prerouting: , "-d", ADDR_PREFIX + str(bucket.ip)  
-        subprocess.call(["iptables", "-t", "nat", "-A", "PREROUTING", "-p", "tcp", "-d", ADDR_PREFIX + str(bucket.ip), "-j", "DNAT", "--to-destination", HONEYPOT_ADDR])
-        subprocess.call(["iptables", "-t", "nat", "-I", "POSTROUTING", "-p", "tcp", "-s", HONEYPOT_ADDR, "-j", "SNAT", "--to-source", ADDR_PREFIX + str(bucket.ip)])
+        iptables_cmd(["-t", "nat", "-A", "PREROUTING", "-p", "tcp", "-d", ADDR_PREFIX + str(bucket.ip), "-j", "DNAT", "--to-destination", HONEYPOT_ADDR])
+        iptables_cmd(["-t", "nat", "-I", "POSTROUTING", "-p", "tcp", "-s", HONEYPOT_ADDR, "-j", "SNAT", "--to-source", ADDR_PREFIX + str(bucket.ip)])
         unmapped.put(bucket)
 
 
 def unmap_server(bucket):
 
         if bucket.type == 0:
-            subprocess.call(["iptables", "-t", "nat", "-D", "PREROUTING", "-p", "tcp", "-s", bucket.client, "-d", ADDR_PREFIX + str(bucket.ip), "-j", "DNAT", "--to-destination", WEB_SERVER_ADDR])
-            subprocess.call(["iptables", "-t", "nat", "-D", "POSTROUTING", "-p", "tcp", "-s", WEB_SERVER_ADDR, "-d", bucket.client, "-j", "SNAT", "--to-source", ADDR_PREFIX + str(bucket.ip)])
+            iptables_cmd(["-t", "nat", "-D", "PREROUTING", "-p", "tcp", "-s", bucket.client, "-d", ADDR_PREFIX + str(bucket.ip), "-j", "DNAT", "--to-destination", WEB_SERVER_ADDR])
+            iptables_cmd(["-t", "nat", "-D", "POSTROUTING", "-p", "tcp", "-s", WEB_SERVER_ADDR, "-d", bucket.client, "-j", "SNAT", "--to-source", ADDR_PREFIX + str(bucket.ip)])
         else:
-            subprocess.call(["iptables", "-t", "nat", "-D", "PREROUTING", "-p", "tcp", "-s", bucket.client, "-m", "iprange", "--dst-range", "10.4.12.50-10.4.12.149", "-j", "DNAT", "--to-destination", WEB_SERVER_ADDR])
-            subprocess.call(["iptables", "-t", "nat", "-D", "POSTROUTING", "-p", "tcp", "-s", WEB_SERVER_ADDR, "-m", "iprange", "--dst-range", "10.4.12.50-10.4.12.149", "-j", "SNAT", "--to-source", ADDR_PREFIX + str(bucket.ip)])
+            iptables_cmd(["-t", "nat", "-D", "PREROUTING", "-p", "tcp", "-s", bucket.client, "-m", "iprange", "--dst-range", "10.4.12.50-10.4.12.149", "-j", "DNAT", "--to-destination", WEB_SERVER_ADDR])
+            iptables_cmd(["-t", "nat", "-D", "POSTROUTING", "-p", "tcp", "-s", WEB_SERVER_ADDR, "-m", "iprange", "--dst-range", "10.4.12.50-10.4.12.149", "-j", "SNAT", "--to-source", ADDR_PREFIX + str(bucket.ip)])
             bucket.type = 0
 
         del mapped_clients[bucket.client]
 
         unmapped.put(bucket)
 
-        print "Capability timeout for " + bucket.client
+        #print "Capability timeout for " + bucket.client
 
 
 def timeout_thread_runner():
@@ -162,7 +162,7 @@ def timeout_thread_runner():
 
             diff = (mapped.queue[0].timeout - currtime).seconds
             if(diff >= .1):
-                print "Next capability expires in " + str(diff) + " seconds"
+                #print "Next capability expires in " + str(diff) + " seconds"
                 time.sleep((mapped.queue[0].timeout - currtime).seconds)
                 continue
 
@@ -172,7 +172,7 @@ def on_packet_received(pkt):
 
     if(d['DNS Question Record'].qname == "www.cap.com."):
         client_IP = d[IP].src
-        print "DNS request sent for " + client_IP
+        #print "DNS request sent for " + client_IP
 
         if client_IP in mapped_clients:
             modify_dns(mapped_clients[client_IP])
@@ -187,10 +187,10 @@ def on_packet_received(pkt):
             else:
                 modify_dns(ADDR_PREFIX + str(res.ip))
 
-        print "Accepted"
+        #Print "Accepted"
         pkt.accept()
     else:
-        print "Accepted"
+        #print "Accepted"
         pkt.accept()
 
 def modify_dns(new_IP):
@@ -221,23 +221,35 @@ def modify_dns(new_IP):
         if err:
             print err
         else:
-            print "DNS zone modification complete"
+            pass
+            #print "DNS zone modification complete"
     else:
-        print "No DNS modification necessary"
-        
+        pass
+        #print "No DNS modification necessary"
+
+iptables_locked = False
+
+def iptables_cmd(args):
+    global iptables_locked
+    while iptables_locked:
+        time.sleep(0.02)
+    iptables_locked = True
+    subprocess.call(["iptables"] + args)
+    iptables_locked = False
+    return None
 
 def setup(num_slots):
-    subprocess.call(["iptables", "-t", "nat", "-F"])
-    subprocess.call(["iptables", "-F"])
+    iptables_cmd(["-t", "nat", "-F"])
+    iptables_cmd(["-F"])
     for i in range(0, num_slots):
         mapping = Slot(i, i + 50, CLIENT_ADDR)
         subprocess.call(["ifconfig", NET_INTERFACE + ":" + str(i), ADDR_PREFIX + str(i + 50)])
-        print "Interface " + NET_INTERFACE + ":" + str(i) + " created with IP " + ADDR_PREFIX + str(i + 50)
+        #print "Interface " + NET_INTERFACE + ":" + str(i) + " created with IP " + ADDR_PREFIX + str(i + 50)
         map_honeypot(mapping)
 
-    subprocess.call(["iptables", "-t", "nat", "-I", "POSTROUTING", "-o", NET_INTERFACE, "-j", "MASQUERADE"])
+    iptables_cmd(["-t", "nat", "-I", "POSTROUTING", "-o", NET_INTERFACE, "-j", "MASQUERADE"])
     subprocess.call(["ifconfig", NET_INTERFACE + ":255", ADDR_PREFIX + "255"])
-    subprocess.call(["iptables", "-I", "INPUT", "-d", ADDR_PREFIX  + "255", "-j", "NFQUEUE", "--queue-num", "1"])
+    iptables_cmd(["-I", "INPUT", "-p", "udp", "-d", ADDR_PREFIX  + "255", "-j", "NFQUEUE", "--queue-num", "1"])
 
 
 def main():

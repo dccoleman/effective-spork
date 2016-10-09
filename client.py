@@ -18,7 +18,7 @@ def thread_runner(addr):
     global response_count
     global response_times
 
-    APP_ADDR = "8.8.8.8"
+    APP_ADDR = "10.4.12.255"
     proc = subprocess.Popen(["dig", "-b", addr, "@" + APP_ADDR, "www.cap.com"], stdout=subprocess.PIPE)
     proc.wait()
     output = proc.stdout.read()
@@ -42,6 +42,7 @@ def main():
         print "Testing with " + `client_count` + " clients"
         average_sum = 0
         for trial in range(0, TRIALS_PER_COUNT):
+            time.sleep(4)
             print "  Trial #" + `trial`
             response_count = 0
             response_times = {}
